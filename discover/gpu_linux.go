@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"reflect"
 	"regexp"
@@ -92,6 +93,19 @@ func GetCPUMem() (memInfo, error) {
 	} else {
 		mem.FreeMemory = (free + buffers + cached) * format.KibiByte
 	}
+
+	//Do not consider RAM that can be used by GTT for AMD APUs
+	amdGPUs, err := AMDGetGPUInfo()
+	if err != nil {
+		slog.Debug("Error getting AMD GPU info: %v", "err", err)
+	}
+	for _, gpuInfo := range amdGPUs {
+		if gpuInfo.ApuUseGTT {
+			mem.TotalMemory -= gpuInfo.TotalMemory
+			mem.FreeMemory -= gpuInfo.TotalMemory
+		}
+	}
+
 	return mem, nil
 }
 

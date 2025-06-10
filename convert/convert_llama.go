@@ -42,6 +42,8 @@ type llamaModel struct {
 	LayerNormEpsilon float32 `json:"layer_norm_epsilon"`
 	NormEpsilon      float32 `json:"norm_epsilon"`
 	HeadDim          uint32  `json:"head_dim"`
+
+	skipRepack bool
 }
 
 var _ ModelConverter = (*llamaModel)(nil)
@@ -68,6 +70,10 @@ func (p *llamaModel) KV(t *Tokenizer) ggml.KV {
 	if headCount := cmp.Or(p.NumAttentionHeads, p.NHead); headCount > 0 {
 		kv["llama.attention.head_count"] = cmp.Or(p.NumAttentionHeads, p.NHead)
 		kv["llama.rope.dimension_count"] = p.HiddenSize / headCount
+	}
+
+	if p.HeadDim > 0 {
+		kv["llama.attention.head_dim"] = p.HeadDim
 	}
 
 	if p.RopeTheta > 0 {
@@ -120,11 +126,11 @@ func (p *llamaModel) KV(t *Tokenizer) ggml.KV {
 	return kv
 }
 
-func (p *llamaModel) Tensors(ts []Tensor) []ggml.Tensor {
-	var out []ggml.Tensor
+func (p *llamaModel) Tensors(ts []Tensor) []*ggml.Tensor {
+	var out []*ggml.Tensor
 
 	if p.RopeScaling.factors != nil {
-		out = append(out, ggml.Tensor{
+		out = append(out, &ggml.Tensor{
 			Name:     "rope_freqs.weight",
 			Kind:     0,
 			Shape:    []uint64{uint64(len(p.RopeScaling.factors))},
@@ -133,12 +139,14 @@ func (p *llamaModel) Tensors(ts []Tensor) []ggml.Tensor {
 	}
 
 	for _, t := range ts {
-		if strings.HasSuffix(t.Name(), "attn_q.weight") ||
-			strings.HasSuffix(t.Name(), "attn_k.weight") {
-			t.SetRepacker(p.repack)
+		if strings.HasSuffix(t.Name(), "attn_q.weight") || strings.HasSuffix(t.Name(), "attn_k.weight") ||
+			strings.HasSuffix(t.Name(), "attn_q_proj.weight") || strings.HasSuffix(t.Name(), "attn_k_proj.weight") {
+			if !p.skipRepack {
+				t.SetRepacker(p.repack)
+			}
 		}
 
-		out = append(out, ggml.Tensor{
+		out = append(out, &ggml.Tensor{
 			Name:     t.Name(),
 			Kind:     t.Kind(),
 			Shape:    t.Shape(),
@@ -174,9 +182,9 @@ func (p *llamaModel) repack(name string, data []float32, shape []uint64) ([]floa
 	}
 
 	var heads uint32
-	if strings.HasSuffix(name, "attn_q.weight") {
+	if strings.HasSuffix(name, "attn_q.weight") || strings.HasSuffix(name, "attn_q_proj.weight") {
 		heads = p.NumAttentionHeads
-	} else if strings.HasSuffix(name, "attn_k.weight") {
+	} else if strings.HasSuffix(name, "attn_k.weight") || strings.HasSuffix(name, "attn_k_proj.weight") {
 		heads = cmp.Or(p.NumKeyValueHeads, p.NumAttentionHeads)
 	} else {
 		return nil, fmt.Errorf("unknown tensor for repack: %s", name)

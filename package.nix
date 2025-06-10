@@ -124,7 +124,7 @@ goBuild (finalAttrs: {
     owner = "kalvinarts";
     repo = "ollama-gtt";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-rkSWMGMKzs7V6jmxS3fG611Zahsyzz5kDI8L4HxQSfQ=";
+    hash = "sha256-+8UHE9M2JWUARuuIRdKwNkn1hoxtuitVH7do5V5uEg0=";
     fetchSubmodules = true;
   };
 
